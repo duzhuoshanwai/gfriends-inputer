@@ -314,9 +314,11 @@ def download_avatar(url, actor_name, proc_md5):
 
 
 @asyncc
-def input_avatar(url, data):
+def input_avatar(url, data ,api_key):
     try:
-        session.post(url, proxies=host_proxies, data=data, headers={"Content-Type": 'image/jpeg'})
+        
+        session.post(url,proxies=host_proxies,data=data,headers={"Content-Type": 'image/jpeg',"Authorization": f'MediaBrowser Token="{api_key}"'})
+        # session.post(url, proxies=host_proxies, data=data, headers={"Content-Type": 'image/jpeg'})
         logger.debug(url.replace(host_url, '').replace(api_key, '***') + ' 导入成功。')
     except:
         logger.warning(url.replace(host_url, '').replace(api_key, '***') + ' 导入失败。' + format_exc())
@@ -428,6 +430,7 @@ def read_config(config_file):
             debug = True if config_settings.get("调试功能", "DeBug") == '是' or debugflag else False
             deleteall = True if config_settings.get("调试功能", "DEL_ALL") == '是' else False
             fixsize = config_settings.getint("导入设置", "Size_Fix")
+            userId = config_settings.get('媒体服务器', 'userId')
             # 修正用户的URL
             if not host_url.endswith('/'): host_url += '/'
             if not repository_url.endswith('/'): repository_url += '/'
@@ -449,7 +452,7 @@ def read_config(config_file):
             return (
                 repository_url, host_url, api_key, overwrite, fixsize, max_retries, Proxy, aifix, debug,
                 deleteall, download_path, local_path, max_download_connect, max_upload_connect, BD_AI_client, BD_VIP,
-                Get_Intro, Conflict_Proc)
+                Get_Intro, Conflict_Proc, userId)
         except:
             logger.error('配置文件读取失败：' + format_exc())
             print('× 无法读取 config.ini。如果这是旧版本的配置文件，请删除后重试。\n')
@@ -565,7 +568,7 @@ Version = '''
 
 def read_persons(host_url, api_key):
     rewriteable_word('>> 连接 Emby / Jellyfin 服务器...')
-    host_url_persons = host_url + 'Persons?api_key=' + api_key  # &PersonTypes=Actor
+    host_url_persons = host_url + 'Persons'  # &PersonTypes=Actor
     try:
         rqs_emby = session.get(url=host_url_persons, proxies=host_proxies, timeout=60, verify=False)
     except requests.exceptions.ConnectionError:
@@ -774,9 +777,10 @@ else:
 (config_file, quiet_flag, update_flag, debugflag) = argparse_function(version)
 # if quiet_flag:
 #   sys.stdout = open("./Getter/quiet.log", "w", buffering=1)
+# 添加userId适配新api
 (repository_url, host_url, api_key, overwrite, fixsize, max_retries, Proxy, aifix, debug, deleteall,
- download_path, local_path, max_download_connect, max_upload_connect, BD_AI_client, BD_VIP, Get_Intro,
- Conflict_Proc) = read_config(config_file)
+download_path, local_path, max_download_connect, max_upload_connect, BD_AI_client, BD_VIP, Get_Intro,
+Conflict_Proc, userId) = read_config(config_file)
 del debugflag, config_file
 
 # 根据配置修改日志记录器属性
@@ -814,8 +818,15 @@ else:
 session = requests.Session()
 session.mount('http://', requests.adapters.HTTPAdapter(max_retries=max_retries, pool_connections=100, pool_maxsize=100))
 session.mount('https://',
-              requests.adapters.HTTPAdapter(max_retries=max_retries, pool_connections=100, pool_maxsize=100))
-session.headers = {"User-Agent": 'Gfriends_Inputer/' + version.replace('v', '')}
+            requests.adapters.HTTPAdapter(max_retries=max_retries, pool_connections=100, pool_maxsize=100))
+
+# 在headers中添加验证 适配新api
+# session.headers = {"User-Agent": 'Gfriends_Inputer/' + version.replace('v', '')}
+session.headers = {
+    "User-Agent": 'Gfriends_Inputer/' + version.replace('v', ''),
+    'accept': '*/*',
+    "Authorization": f'MediaBrowser Token="{api_key}"',
+}
 session.proxies = proxies
 
 # 检查更新
@@ -1080,8 +1091,10 @@ try:
                 if not proc_flag or (proc_flag and not proc_md5 in proc_list):
                     with open(pic_path, 'rb') as pic_bit:
                         b6_pic = b64encode(pic_bit.read())
-                    url_post_img = host_url + 'Items/' + actor_dict[actorname] + '/Images/Primary?api_key=' + api_key
-                    input_avatar(url_post_img, b6_pic)
+                    
+                    #这里[actorname] 就是Id
+                    url_post_img = host_url + 'Items/' + actor_dict[actorname] + '/Images/Primary?userId=' + userId
+                    input_avatar(url_post_img, b6_pic ,api_key)
                     if Get_Intro == 1:
                         bar.text(
                             '搜索信息：' + re.sub(r'（.*）', '', filename).replace('.jpg',
